@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -19,7 +20,14 @@ public:
   void writeAudio(const uint8_t *data, size_t size, int64_t pts_ms);
 
   bool isActive() const {
-    return active_;
+    return active_.load(std::memory_order_acquire);
+  }
+
+  // Bumped on every start(). AudioWorker keeps its own per-channel clock and
+  // resets it when this changes, because a looped segment restarts faster than
+  // one audio frame and the inactive window is never observed.
+  uint64_t generation() const {
+    return generation_.load(std::memory_order_acquire);
   }
 
 private:
@@ -28,6 +36,7 @@ private:
 
   mutable std::mutex mutex_;
   std::unique_ptr<MP4Muxer> muxer_;
+  std::atomic<uint64_t> generation_{0};
   int fd_ = -1;
-  bool active_ = false;
+  std::atomic<bool> active_{false};
 };

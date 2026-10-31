@@ -182,7 +182,8 @@ private:
 
 AudioWorker::AudioWorker(int chn)
     : encChn(chn), mp4_audio_samples(NUM_VIDEO_CHANNELS, 0),
-      mp4_audio_sample_rate(0), tap(std::make_unique<AudioTap>()) {
+      mp4_audio_generation(NUM_VIDEO_CHANNELS, 0), mp4_audio_sample_rate(0),
+      tap(std::make_unique<AudioTap>()) {
   LOG_DEBUG("AudioWorker created for channel " << encChn);
 }
 
@@ -279,6 +280,12 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     if (!recorder_active) {
       mp4_audio_samples[ch] = 0;
       continue;
+    }
+
+    uint64_t generation = recorder.generation();
+    if (mp4_audio_generation[ch] != generation) {
+      mp4_audio_generation[ch] = generation;
+      mp4_audio_samples[ch] = 0;
     }
 
     any_recorder_active = true;

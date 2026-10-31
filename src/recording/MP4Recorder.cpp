@@ -80,7 +80,8 @@ bool MP4Recorder::start(const std::string &path,
     }
   }
 
-  active_ = true;
+  generation_.fetch_add(1, std::memory_order_release);
+  active_.store(true, std::memory_order_release);
   return true;
 }
 
@@ -131,7 +132,7 @@ void MP4Recorder::closeUnlocked() {
     ::close(fd_);
     fd_ = -1;
   }
-  active_ = false;
+  active_.store(false, std::memory_order_release);
 }
 
 /* Stop the segment after a write failure. The muxer is left for
@@ -143,5 +144,5 @@ void MP4Recorder::abortUnlocked() {
     ::close(fd_);
     fd_ = -1;
   }
-  active_ = false;
+  active_.store(false, std::memory_order_release);
 }

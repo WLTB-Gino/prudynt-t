@@ -23,6 +23,7 @@ private:
 
   int encChn;
   std::vector<int64_t> mp4_audio_samples;
+  std::vector<uint64_t> mp4_audio_generation;
   int mp4_audio_sample_rate = 0;
   std::unique_ptr<AudioTap> tap;
   std::vector<uint8_t> directEncBuf;
