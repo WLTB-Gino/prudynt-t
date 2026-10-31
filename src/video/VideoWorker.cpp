@@ -226,6 +226,8 @@ void VideoWorker::run() {
   bool mp4_sample_is_key = false;
   int64_t mp4_sample_ts_us = -1;
   int64_t mp4_sample_ts_base_us = -1;
+  int64_t mp4_last_ts_us = 0;
+  int64_t mp4_ts_offset_us = 0;
   bool mp4_waiting_frame_end = false;
   bool mp4_inserted_codec_config = false;
 
@@ -303,6 +305,8 @@ void VideoWorker::run() {
   auto reset_mp4_state = [&]() {
     reset_mp4_sample();
     mp4_sample_ts_base_us = -1;
+    mp4_last_ts_us = 0;
+    mp4_ts_offset_us = 0;
   };
 
   auto flush_mp4_sample = [&](bool recorder_active) {
@@ -575,6 +579,8 @@ void VideoWorker::run() {
           }
           if (!recorder_accepts_samples) {
             mp4_sample_ts_base_us = -1;
+            mp4_last_ts_us = 0;
+            mp4_ts_offset_us = 0;
           }
 
           fps++;
@@ -698,6 +704,29 @@ void VideoWorker::run() {
 
           if (pack_is_frame_end && pack_ts_us > 0) {
             ts_last_frame_us = pack_ts_us;
+          }
+
+          // The recorder timeline outlives an RTSP session. When a client
+          // connects, VideoWorker flushes the encoder and clears
+          // ts_last_frame_us, so the frame-path guard below cannot see the
+          // encoder's relative-to-rebased timestamp step and the MP4 PTS
+          // jumps forward by the whole session age. Keep a recorder-scoped
+          // last timestamp and fold each domain step into an offset so the
+          // file stays continuous.
+          int64_t mp4_ts_us = pack_ts_us;
+          if (recorder_accepts_samples && mp4_ts_us > 0) {
+            mp4_ts_us -= mp4_ts_offset_us;
+            if (mp4_last_ts_us > 0 &&
+                mp4_ts_us > mp4_last_ts_us + 2 * nominal_frame_step_us) {
+              mp4_ts_offset_us +=
+                  mp4_ts_us - (mp4_last_ts_us + nominal_frame_step_us);
+              mp4_ts_us = mp4_last_ts_us + nominal_frame_step_us;
+            } else if (mp4_last_ts_us > 0 && mp4_ts_us < mp4_last_ts_us) {
+              mp4_ts_offset_us -=
+                  (mp4_last_ts_us + nominal_frame_step_us) - mp4_ts_us;
+              mp4_ts_us = mp4_last_ts_us + nominal_frame_step_us;
+            }
+            mp4_last_ts_us = mp4_ts_us;
           }
 
           int64_t rtsp_ts_us = pack_ts_us;
@@ -835,7 +864,7 @@ void VideoWorker::run() {
           }
 
           if ((nal_is_idr || nal_is_hevc_idr) && video_state) {
-            video_state->mp4_last_idr_ts_us.store(pack_ts_us,
+            video_state->mp4_last_idr_ts_us.store(mp4_ts_us,
                                                   std::memory_order_relaxed);
           }
 
@@ -846,11 +875,11 @@ void VideoWorker::run() {
 
             if (mp4_sample_ts_us != -1 && !mp4_sample.empty()) {
               if (mp4_waiting_frame_end) {
-                if (pack_ts_us != mp4_sample_ts_us) {
+                if (mp4_ts_us != mp4_sample_ts_us) {
                   flush_mp4_sample(recorder_active);
                 }
               } else {
-                int64_t delta = pack_ts_us - mp4_sample_ts_us;
+                int64_t delta = mp4_ts_us - mp4_sample_ts_us;
                 if (delta <= 0 || delta >= mp4_frame_switch_threshold_us) {
                   flush_mp4_sample(recorder_active);
                 }
@@ -858,9 +887,9 @@ void VideoWorker::run() {
             }
 
             if (mp4_sample_ts_us == -1) {
-              mp4_sample_ts_us = pack_ts_us;
+              mp4_sample_ts_us = mp4_ts_us;
               if (mp4_sample_ts_base_us == -1) {
-                mp4_sample_ts_base_us = pack_ts_us;
+                mp4_sample_ts_base_us = mp4_ts_us;
               }
             }
 
