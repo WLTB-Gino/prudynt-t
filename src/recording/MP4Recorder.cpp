@@ -31,6 +31,23 @@ int write_all(int fd, const uint8_t *data, size_t len)
   return 0;
 }
 
+/* Same as write_all(), but at an absolute offset. Used to patch the durations
+ * into the moov written at the start of the segment. */
+int pwrite_all(int fd, const uint8_t *data, size_t len, off_t off) {
+  size_t done = 0;
+  while (done < len) {
+    ssize_t w =
+        ::pwrite(fd, data + done, len - done, off + static_cast<off_t>(done));
+    if (w < 0) {
+      if (errno == EINTR)
+        continue;
+      return -errno;
+    }
+    done += static_cast<size_t>(w);
+  }
+  return 0;
+}
+
 } // namespace
 
 MP4Recorder::MP4Recorder() = default;
@@ -124,6 +141,15 @@ void MP4Recorder::writeAudio(const uint8_t *data, size_t size, int64_t pts_ms) {
 }
 
 void MP4Recorder::closeUnlocked() {
+  if (muxer_ && fd_ >= 0) {
+    std::vector<uint8_t> initSeg = muxer_->getFinalInitSegment();
+    if (!initSeg.empty()) {
+      int rc = pwrite_all(fd_, initSeg.data(), initSeg.size(), 0);
+      if (rc < 0) {
+        LOG_ERROR("failed to patch MP4 header: " << std::strerror(-rc));
+      }
+    }
+  }
   if (muxer_) {
     muxer_->close();
     DestroyMP4Muxer(muxer_.release());

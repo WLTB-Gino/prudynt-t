@@ -33,6 +33,10 @@ static void write_u24(std::vector<uint8_t> &out, uint32_t v) {
   out.push_back(static_cast<uint8_t>(v & 0xFF));
 }
 
+static uint32_t clamp_u32(uint64_t v) {
+  return v > 0xFFFFFFFFull ? 0xFFFFFFFFu : static_cast<uint32_t>(v);
+}
+
 static void write_box(std::vector<uint8_t> &out, const char type[4],
                       const std::vector<uint8_t> &payload) {
   uint32_t size = 8u + static_cast<uint32_t>(payload.size());
@@ -91,6 +95,47 @@ public:
   }
 
   std::vector<uint8_t> getInitSegment() override {
+    std::vector<uint8_t> out;
+    write_ftyp(out);
+    write_moov(out);
+    return out;
+  }
+
+  std::vector<uint8_t> getFinalInitSegment() override {
+    uint64_t video_duration = 0;
+    if (video_.have_last_pts) {
+      uint32_t step = video_.default_duration_ticks;
+      if (step == 0) {
+        step = video_.timescale / 30;
+      }
+      if (step == 0) {
+        step = 1;
+      }
+      video_duration = video_.last_pts + step;
+    }
+
+    uint64_t audio_duration = 0;
+    if (audio_.have_last_pts) {
+      uint32_t step = audio_.default_duration_ticks;
+      if (step == 0) {
+        step = 1024;
+      }
+      audio_duration = audio_.last_pts + step;
+    }
+
+    uint64_t audio_movie_duration =
+        (audio_.enabled && audio_.timescale > 0)
+            ? audio_duration * 90000ull / audio_.timescale
+            : 0;
+    uint64_t movie_duration = video_duration > audio_movie_duration
+                                  ? video_duration
+                                  : audio_movie_duration;
+
+    video_duration_ticks_ = clamp_u32(video_duration);
+    audio_duration_ticks_ = clamp_u32(audio_duration);
+    audio_movie_duration_ticks_ = clamp_u32(audio_movie_duration);
+    movie_duration_ticks_ = clamp_u32(movie_duration);
+
     std::vector<uint8_t> out;
     write_ftyp(out);
     write_moov(out);
@@ -176,7 +221,7 @@ private:
       write_u32(mvhd, 0);           // creation_time
       write_u32(mvhd, 0);           // modification_time
       write_u32(mvhd, 90000);       // timescale
-      write_u32(mvhd, 0);           // duration (0 for fragmented)
+      write_u32(mvhd, movie_duration_ticks_); // duration
       write_u32(mvhd, 0x00010000u); // rate 1.0
       write_u16(mvhd, 0x0100);      // volume 1.0
       write_u16(mvhd, 0);           // reserved
@@ -207,9 +252,16 @@ private:
       write_trak(moov_payload, audio_, false);
     }
 
-    // mvex/trex for each track (default fragment values)
+    // mvex/mehd/trex for each track (default fragment values)
     {
       std::vector<uint8_t> mvex;
+      // Keep the box present in the initial segment so patching it at close
+      // does not change the header size.
+      std::vector<uint8_t> mehd;
+      write_u8(mehd, 0);
+      write_u24(mehd, 0);
+      write_u32(mehd, movie_duration_ticks_);
+      write_box(mvex, "mehd", mehd);
       if (video_.enabled)
         write_trex(mvex, video_.track_id);
       if (audio_.enabled)
@@ -245,8 +297,9 @@ private:
       write_u32(tkhd, 0); // creation_time
       write_u32(tkhd, 0); // modification_time
       write_u32(tkhd, t.track_id);
-      write_u32(tkhd, 0);                     // reserved
-      write_u32(tkhd, 0);                     // duration (0 for fragmented)
+      write_u32(tkhd, 0); // reserved
+      write_u32(tkhd, is_video ? video_duration_ticks_
+                               : audio_movie_duration_ticks_); // duration
       write_u32(tkhd, 0);                     // reserved
       write_u32(tkhd, 0);                     // reserved
       write_u16(tkhd, 0);                     // layer
@@ -279,7 +332,8 @@ private:
       write_u32(mdhd, 0); // creation_time
       write_u32(mdhd, 0); // modification_time
       write_u32(mdhd, t.timescale);
-      write_u32(mdhd, 0);      // duration
+      write_u32(mdhd, is_video ? video_duration_ticks_
+                               : audio_duration_ticks_); // duration
       write_u16(mdhd, 0x55c4); // language (und)
       write_u16(mdhd, 0);      // pre_defined
       write_box(mdia, "mdhd", mdhd);
@@ -640,6 +694,10 @@ private:
 
   TrackState video_;
   TrackState audio_;
+  uint32_t movie_duration_ticks_ = 0;
+  uint32_t video_duration_ticks_ = 0;
+  uint32_t audio_duration_ticks_ = 0;
+  uint32_t audio_movie_duration_ticks_ = 0;
   bool is_hevc_ = false;
   uint32_t next_seq_ = 1;
   bool audio_warn_no_track_reported_ = false;

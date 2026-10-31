@@ -28,6 +28,13 @@ public:
   // clients
   virtual std::vector<uint8_t> getInitSegment() = 0;
 
+  // Rebuild the init segment with the final track durations known at close().
+  // The recorder writes it over the original header. Empty when the backend
+  // has no duration fields to patch.
+  virtual std::vector<uint8_t> getFinalInitSegment() {
+    return {};
+  }
+
   // Feed one video sample (raw NALs for H.264) and return any generated
   // fragment bytes pts is in milliseconds.
   virtual std::vector<uint8_t> muxVideo(const uint8_t *data, size_t size,
