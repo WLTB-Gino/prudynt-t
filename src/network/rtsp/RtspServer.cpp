@@ -945,9 +945,9 @@ void RtspServer::handleRequest(int idx) {
                 char path[512];
                 time_t now = time(nullptr);
                 struct tm tm;
-                localtime_r(&now, &tm);
+                gmtime_r(&now, &tm);
                 snprintf(path, sizeof(path),
-                         "%s/overflow-%04d%02d%02d-%02d%02d%02d-%s-%d.bin",
+                         "%s/overflow-%04d%02d%02d-%02d%02d%02dZ-%s-%d.bin",
                          camDir,
                          tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
                          tm.tm_hour, tm.tm_min, tm.tm_sec,

@@ -932,9 +932,9 @@ format_segment_name(const std::string &templ,
   auto tt = std::chrono::system_clock::to_time_t(reference);
   std::tm tm_buf{};
 #if defined(_WIN32)
-  localtime_s(&tm_buf, &tt);
+  gmtime_s(&tm_buf, &tt);
 #else
-  localtime_r(&tt, &tm_buf);
+  gmtime_r(&tt, &tm_buf);
 #endif
   char buffer[256];
   if (std::strftime(buffer, sizeof(buffer), templ.c_str(), &tm_buf) == 0) {

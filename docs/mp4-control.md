@@ -53,7 +53,7 @@ START mount=<root> dir=<subdir> name=<strftime> dur=<seconds> ch=<channel> loop=
 ```
 
 - **path**: absolute file path for a one-shot recording. Parents must already exist unless you rely on `mount/dir/name`.
-- **mount**/**dir**/**name**: when `loop=1`, Prudynt builds each filename by combining the mount point, optional directory, and an `strftime(3)` template. Missing parents are created automatically and `.mp4` is appended when the template does not specify an extension.
+- **mount**/**dir**/**name**: when `loop=1`, Prudynt builds each filename by combining the mount point, optional directory, and an `strftime(3)` template. Missing parents are created automatically and `.mp4` is appended when the template does not specify an extension. The template is expanded in UTC so names stay monotonically unique across DST transitions.
 - **duration**: recording length in seconds. If omitted or `<= 0`, the recorder keeps running until a `STOP`. Looped sessions must supply a positive duration so clips rotate predictably.
 - **channel**: video encoder channel (`0` or `1`). Defaults to `recorder.channel` in `prudynt.json`.
 - **loop**: enable seamless looped recording by setting `loop=1`. Omit the flag (or set `loop=0`) for single clips.

@@ -74,8 +74,8 @@ static void crash_signal_handler_extended(int sig, siginfo_t *info,
   time_t now = time(nullptr);
   char timebuf[64];
   struct tm tm_info;
-  localtime_r(&now, &tm_info);
-  strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S", &tm_info);
+  gmtime_r(&now, &tm_info);
+  strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S UTC", &tm_info);
 
   safe_write(crash_fd, "\n=== PRUDYNT CRASH REPORT ===\n");
   safe_write(crash_fd, "Timestamp: ");
